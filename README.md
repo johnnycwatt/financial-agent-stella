@@ -26,7 +26,7 @@ Stella is a Python-based application that provides financial data and news analy
   - `langgraph`
   - `python-dotenv`
 - API keys:
-  - OpenAI API key (for LLM based summarization and classification)
+  - OpenAI API key (for LLM based summarization and classification) - or LM Studio running locally
   - Alpha Vantage API key (for stock data and news) - free API available with limits. 
   - Brave Search API key (news fetching)
 - A running server for API usage (see Setup section)
@@ -54,7 +54,9 @@ Stella is a Python-based application that provides financial data and news analy
    ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
    BRAVE_API_KEY=your_brave_api_key
    DEBUG_MODE=false #True for detailed logs during debugging. 
+   USE_OPENAI=true # Set to false to use LM Studio local LLM instead of OpenAI
    ```
+   **Note**: When `USE_OPENAI=false`, ensure LM Studio is running locally at `http://127.0.0.1:1234` with the `qwen/qwen3-4b-2507` model loaded.
 
 4. **Start the Server** (for API usage):
    Ensure the server (FastAPI) is running to handle API requests:
@@ -166,7 +168,7 @@ curl -X POST "http://localhost:8001/analyze" \
 
 - The Business Report generated may include price targets. These price targets are analysts recommendations retrieved from yfinance. This is not intended to be financial advice. 
 
-- I found that `gpt-5-nano` works well for my needs and is relatively cost-effective. Alternative OpenAI Models may be better suited for your needs.
+- I found that `gpt-5-nano` works well for my needs and is relatively cost-effective. Alternative OpenAI Models may be better suited for your needs. For local LLM usage, set `USE_OPENAI=false` to use LM Studio with `qwen/qwen3-4b-2507`.
 
 ## Contributing
 

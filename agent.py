@@ -15,11 +15,19 @@ import json
 
 load_dotenv()
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+USE_OPENAI = os.getenv("USE_OPENAI", "true").lower() == "true"
 
 logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
 logger = logging.getLogger(__name__)
 
-llm = ChatOpenAI(model="gpt-5-nano", api_key=os.getenv("OPENAI_API_KEY"))
+if USE_OPENAI:
+    llm = ChatOpenAI(model="gpt-5-nano", api_key=os.getenv("OPENAI_API_KEY"))
+else:
+    llm = ChatOpenAI(
+        model="qwen/qwen3-4b-2507",
+        base_url="http://127.0.0.1:1234/v1",
+        api_key="not-needed"  # LM Studio doesn't require API key
+    )
 
 class AgentState(TypedDict):
     query: str

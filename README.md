@@ -4,6 +4,8 @@
 
 Stella is a Python-based application that provides financial data and news analysis for stocks and general topics. It supports generating detailed stock reports, company overviews, company news, general news, and stock highlights using data from yFinance, Alpha Vantage, and Brave Search APIs. The application can be interacted with via a command-line interface (CLI) or an API endpoint.
 
+![Stella UI screenshot](docs/stella-ui.png)
+
 ## Features
 
 - **Stock Report**: Generate comprehensive stock reports including price, market profile, business description, news, and risk metrics.
@@ -56,7 +58,7 @@ Stella is a Python-based application that provides financial data and news analy
    DEBUG_MODE=false #True for detailed logs during debugging. 
    USE_OPENAI=true # Set to false to use LM Studio local LLM instead of OpenAI
    ```
-   **Note**: When `USE_OPENAI=false`, ensure LM Studio is running locally at `http://127.0.0.1:1234` with the `qwen/qwen3-4b-2507` model loaded.
+   **Note**: When `USE_OPENAI=false`, ensure LM Studio is running locally at `http://127.0.0.1:1234` with your selected model open.
 
 4. **Start the Server** (for API usage):
    Ensure the server (FastAPI) is running to handle API requests:
@@ -66,6 +68,30 @@ Stella is a Python-based application that provides financial data and news analy
    Replace `app:app` with the actual FastAPI application module if different. Replace port number with a port number of your choosing. 
 
 ## Usage
+
+### Web Interface (Streamlit)
+
+Stella now includes a user-friendly web interface built with Streamlit:
+
+1. **Install Streamlit**:
+   ```bash
+   pip install -r frontend/requirements.txt
+   ```
+
+2. **Start the Web Interface**:
+   ```bash
+   streamlit run frontend/stella.py
+   ```
+
+3. **Access the Interface**:
+   Open your browser to `http://localhost:8501`
+
+The web interface provides:
+- Interactive chat interface with conversation history
+- Scrollable message view
+- Query examples in the sidebar
+- Real-time status of the API server
+- All the same functionality as the CLI
 
 ### Command Line Interface (CLI)
 
@@ -93,11 +119,12 @@ Examples:
 3. Company News: '3: What is the latest news on Apple'
 4. General News: '4: Latest news on artificial intelligence'
 5. Highlights: '5: Give me todays update on Tesla, Apple, and Microsoft'
+6. Follow-up Query: '6: Tell me more about Nvidia's AI chips' or 'Tell me more about Tesla's new model'
 --------------------------------------------------
 
 Enter your query:
 ```
-Enter a query (Example: `5: Give me todays update on Tesla, Apple`) or type `exit` to quit. Use the task number prefix (1-5) to specify the query type.
+Enter a query (Example: `5: Give me todays update on Tesla, Apple`) or type `exit` to quit. Use the task number prefix (1-6) to specify the query type.
 
 ### API Usage
 
@@ -156,6 +183,7 @@ curl -X POST "http://localhost:8001/analyze" \
 3. **Company News**: Latest news for a specific company (Example:  `3: What is the latest news on Apple`).
 4. **General News**: News on a general topic (Example:  `4: Latest news on artificial intelligence`).
 5. **Highlights**: Quick stock metrics and up to 5 news summaries for one or more companies (Example:  `5: Give me todays update on Tesla, Apple`).
+6. **Follow-up Query**: Deeper search on specific topics from previous responses (Example:  `6: Tell me more about Nvidia's AI chips` or `Tell me more about Tesla's new model`).
 
 * Please Note: The number (for example `4: ...`) isn't strictly necessary. It is just a way to reduce a LLM call for intent classification. In addition, I have listed some common companies and their tickers in agent.py to reduce the amount of LLM calls needed to extract the intent and ticker. A query such as `Generate a report for me on Tesla` will work, it will just trigger a additional LLM call for intent classification. 
 
@@ -168,7 +196,7 @@ curl -X POST "http://localhost:8001/analyze" \
 
 - The Business Report generated may include price targets. These price targets are analysts recommendations retrieved from yfinance. This is not intended to be financial advice. 
 
-- I found that `gpt-5-nano` works well for my needs and is relatively cost-effective. Alternative OpenAI Models may be better suited for your needs. For local LLM usage, set `USE_OPENAI=false` to use LM Studio with `qwen/qwen3-4b-2507`.
+- I found that `gpt-5-nano` works well for my needs and is relatively cost-effective. Alternative OpenAI Models may be better suited for your needs. For local LLM usage, set `USE_OPENAI=false` to use LM Studio with a model such as `qwen/qwen3-4b-2507`.
 
 ## Contributing
 
@@ -177,3 +205,39 @@ Contributions are welcome! Please submit pull requests or open issues for bugs, 
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+## Web Interface
+
+Stella provides a user-friendly web interface built with Streamlit:
+
+### Setup
+
+1. **Install Frontend Dependencies**:
+   ```bash
+   pip install -r frontend/requirements.txt
+   ```
+
+2. **Configure Environment Variables** (optional, for enhanced responses):
+   Add to your `.env` file:
+   ```plaintext
+   USE_OPENAI_FRONTEND=true  # Use OpenAI for response enhancement (default)
+   # Or for local LLM:
+   USE_OPENAI_FRONTEND=false
+   LM_STUDIO_URL_FRONTEND=http://127.0.0.1:1234/v1
+   LM_STUDIO_MODEL_FRONTEND=qwen/qwen3-4b-2507
+   ```
+
+3. **Start the Web Interface**:
+   ```bash
+   streamlit run frontend/stella.py
+   ```
+
+### Features
+
+- **Conversational Interface**: Chat-like experience with message history
+- **Smart Response Processing**: LLM-enhanced responses for better readability (frontend-only)
+- **Real-time Status**: Connection status and API health checks
+- **Task Examples**: Built-in examples for all query types
+- **Session Management**: Maintains conversation context across queries
+
+**Note**: The web interface enhances responses for better user experience but does not affect the core API responses used by other applications.

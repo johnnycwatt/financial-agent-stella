@@ -1,12 +1,27 @@
 import requests
 import sys
 
+chat_history = []
+
 def query_stella(query: str):
     """Send a query to the Stella API and print the response."""
+    global chat_history
     try:
-        response = requests.post("http://localhost:8001/analyze", json={"query": query, "source": "cli"})
+        response = requests.post("http://localhost:8001/analyze", json={"query": query, "source": "cli", "chat_history": chat_history})
         if response.status_code == 200:
-            print("\n" + response.json()["result"] + "\n")
+            result = response.json()["result"]
+            print("\n" + result + "\n")
+            # Update chat history (this would be better if the API returned the updated history)
+            # For now, we'll maintain it locally
+            from datetime import datetime
+            chat_history.append({
+                "query": query,
+                "response": result,
+                "timestamp": datetime.now().isoformat()
+            })
+            # Keep only last 10 interactions
+            if len(chat_history) > 10:
+                chat_history = chat_history[-10:]
         else:
             print(f"\nError: {response.text}\n")
     except requests.exceptions.RequestException as e:
@@ -22,6 +37,7 @@ def print_welcome_message():
     print("3. Company News: '3: What is the latest news on Apple'")
     print("4. General News: '4: Latest news on artificial intelligence'")
     print("5. Highlights: '5: Give me todays update on Tesla, Apple, and Microsoft'")
+    print("6. Follow-up Query: '6: Tell me more about Nvidia's AI chips' or 'Tell me more about Tesla's new model'")
     print("-" * 50)
 
 def main():

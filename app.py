@@ -21,7 +21,7 @@ def analyze(query: QueryRequest):
     logger.info(f"Incoming query: {query.query}")
     start_time = time.time()
     try:
-        result = run_agent(query.query, source=query.source)
+        result, updated_history = run_agent(query.query, source=query.source, chat_history=query.chat_history)
         end_time = time.time()
         logger.info(f"Time taken to process query: {end_time - start_time:.2f}s")
         logger.info(f"Response sent (length: {len(result)} characters)")

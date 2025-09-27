@@ -19,6 +19,7 @@ Data flows: Query → Router (classify/extract) → Task-specific node (fetch da
 - Configure `.env` with API keys: `OPENAI_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `BRAVE_API_KEY`, `DEBUG_MODE`, `USE_OPENAI`
 - Start server: `uvicorn app:app --host 127.0.0.1 --port 8001`
 - CLI usage: `python cli.py` (interactive) or `python cli.py "5: Give me todays update on Tesla"`
+- Web UI: `pip install -r frontend/requirements.txt && streamlit run frontend/stella.py`
 
 ### Data Pregeneration
 Run `python pregenerate_data.py --all` daily to cache reports/overviews for common companies. Reduces response time and API costs.
@@ -32,6 +33,7 @@ Set `DEBUG_MODE=true` in `.env` for detailed logging. Use `@time_it` decorator o
 - Task prefixes (`1:`, `2:`, etc.) bypass LLM classification for efficiency.
 - Common companies dict in `agent.py` avoids LLM extraction calls.
 - Regex extraction for tickers before LLM fallback.
+- Follow-up patterns (`tell me more about`, `explain`, etc.) automatically detected for task type 6.
 
 ### Data Fetching Patterns
 - Concurrent fetching with `ThreadPoolExecutor` for multi-company highlights.
@@ -74,6 +76,8 @@ Set `DEBUG_MODE=true` in `.env` for detailed logging. Use `@time_it` decorator o
 - Strip HTML from news with `re.sub(r'<.*?>', '', text)`.
 - Format responses based on `source` parameter ("cli" vs raw).
 - Handle missing data gracefully with `.get()` on dicts.
+- Maintain chat history for follow-up queries (last 10 interactions).
+- Frontend LLM processing enhances responses for Streamlit UI (separate from core API).
 
 ## Examples
 

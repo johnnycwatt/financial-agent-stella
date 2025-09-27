@@ -16,6 +16,8 @@ import json
 load_dotenv()
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 USE_OPENAI = os.getenv("USE_OPENAI", "true").lower() == "true"
+LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://127.0.0.1:1234/v1") #The default LM Studio URL, or update your LM Studio URL in .env
+LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "qwen/qwen3-4b-2507") #The default LM Studio model, or update your LM Studio model in .env
 
 logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,19 +26,22 @@ if USE_OPENAI:
     llm = ChatOpenAI(model="gpt-5-nano", api_key=os.getenv("OPENAI_API_KEY"))
 else:
     llm = ChatOpenAI(
-        model="qwen/qwen3-4b-2507",
-        base_url="http://127.0.0.1:1234/v1",
-        api_key="not-needed"  # LM Studio doesn't require API key
+        model=LM_STUDIO_MODEL,
+        base_url=LM_STUDIO_URL,
+        api_key="not-needed"
     )
 
 class AgentState(TypedDict):
     query: str
     task_type: str
     company: Optional[str]
+    ticker: Optional[str]  # Missing field causing KeyError
     companies: Optional[List[dict]]
     data: Optional[dict]
     response: str
     source: Optional[str]  # cli or other
+    chat_history: Optional[List[dict]]  # List of previous queries and responses
+    follow_up_topic: Optional[str]  # Topic for follow-up queries
 
 common_companies = {
     "apple": ("Apple", "AAPL"),
@@ -67,6 +72,7 @@ router_prompt = PromptTemplate.from_template(
     3 - Company News
     4 - General News
     5 - Highlights
+    6 - Follow-up Query
     Query: {query}
     Output only the number."""
 )
@@ -78,7 +84,7 @@ def router_node(state: AgentState) -> AgentState:
     match = re.match(r'^(\d+):\s*(.*)', state["query"])
     if match:
         task_type = match.group(1)
-        if task_type in ["1", "2", "3", "4", "5"]:
+        if task_type in ["1", "2", "3", "4", "5", "6"]:
             state["task_type"] = task_type
             state["query"] = match.group(2).strip()
             logger.info(f"Extracted task type from prefix: {task_type}")
@@ -88,6 +94,22 @@ def router_node(state: AgentState) -> AgentState:
         task_type = None
 
     if not task_type:
+        # Check for follow-up patterns before LLM classification
+        follow_up_patterns = [
+            r'^tell me more about (.+)$',
+            r'^explain (.+)$',
+            r'^details on (.+)$',
+            r'^what about (.+)$',
+            r'^more on (.+)$'
+        ]
+        for pattern in follow_up_patterns:
+            match = re.match(pattern, state["query"].lower())
+            if match:
+                state["task_type"] = "6"
+                state["follow_up_topic"] = match.group(1).strip()
+                logger.info(f"Detected follow-up query for topic: {state['follow_up_topic']}")
+                return state
+        
         try:
             task_type = llm.invoke(router_prompt.format(query=state["query"])).content.strip()
             state["task_type"] = task_type
@@ -109,15 +131,33 @@ def router_node(state: AgentState) -> AgentState:
                 break
         if not extracted:
             try:
-                extract_prompt = PromptTemplate.from_template("Extract company name and ticker from: {query}. Output as 'Company: X, Ticker: Y' or 'None'.")
-                extract = llm.invoke(extract_prompt.format(query=state["query"])).content
-                if "None" not in extract:
-                    parts = extract.split(", ")
-                    state["company"] = parts[0].split(": ")[1]
-                    state["ticker"] = parts[1].split(": ")[1] if len(parts) > 1 else state["company"].upper()
-                    logger.debug(f"Extracted company via LLM: {state['company']}, ticker: {state['ticker']}")
+                extract_prompt = PromptTemplate.from_template(
+                    "Extract company name and stock ticker from: '{query}'. "
+                    "Return ONLY in this exact format: 'Company: [NAME], Ticker: [TICKER]' "
+                    "If no company found, return 'None'. "
+                    "Examples: "
+                    "'Give me info on Apple' -> 'Company: Apple, Ticker: AAPL' "
+                    "'What about TSLA?' -> 'Company: Tesla, Ticker: TSLA'"
+                )
+                extract = llm.invoke(extract_prompt.format(query=state["query"])).content.strip()
+                logger.debug(f"LLM extraction result: {extract}")
+                
+                if "None" not in extract and "Company:" in extract and "Ticker:" in extract:
+                    # More robust parsing
+                    company_match = re.search(r'Company:\s*([^,]+)', extract, re.IGNORECASE)
+                    ticker_match = re.search(r'Ticker:\s*([^\s]+)', extract, re.IGNORECASE)
+                    
+                    if company_match and ticker_match:
+                        state["company"] = company_match.group(1).strip()
+                        state["ticker"] = ticker_match.group(1).strip().upper()
+                        logger.debug(f"Extracted company via LLM: {state['company']}, ticker: {state['ticker']}")
+                    else:
+                        logger.warning(f"Could not parse LLM response: {extract}")
+                else:
+                    logger.debug("No company/ticker found in query")
             except Exception as e:
                 logger.error(f"Error extracting company/ticker: {e}")
+                # Don't set any error response here - let the task nodes handle missing ticker
     elif state["task_type"] == "5":
         query_lower = state["query"].lower()
         seen_tickers = set()
@@ -217,7 +257,7 @@ report_prompt = PromptTemplate.from_template(
 
 @time_it
 def generate_report_node(state: AgentState) -> AgentState:
-    if state["ticker"]:
+    if state.get("ticker"):
         logger.debug(f"Generating report for ticker: {state['ticker']}")
         try:
             date = datetime.now().strftime("%Y-%m-%d")
@@ -242,12 +282,14 @@ def generate_report_node(state: AgentState) -> AgentState:
         except Exception as e:
             logger.error(f"Error generating report: {e}")
             state["response"] = "Error generating report."
+    else:
+        state["response"] = "No ticker found for the requested company. Please specify a valid company name or ticker."
     return state
 
 # Task 2: Generate Overview (use cached report if recent, else generate simple)
 @time_it
 def generate_overview_node(state: AgentState) -> AgentState:
-    if state["ticker"]:
+    if state.get("ticker"):
         logger.debug(f"Generating overview for ticker: {state['ticker']}")
         try:
             date = datetime.now().strftime("%Y-%m-%d")
@@ -281,7 +323,7 @@ def generate_overview_node(state: AgentState) -> AgentState:
                     logger.debug("Used existing report for overview")
                 else:
                     overview_prompt = PromptTemplate.from_template("Generate quick overview: Company {company}, Price: {price}, Highlights: {data}, News: {news}")
-                    state["response"] = llm.invoke(overview_prompt.format(company=state["company"], price=state["data"]["current_price"], data=state["data"], news="\n".join(clean_news))).content
+                    state["response"] = llm.invoke(overview_prompt.format(company=state["company"], price=state["data"].get("current_price"), data=state["data"], news="\n".join(clean_news))).content
                     logger.debug("Generated new overview")
                 # Save overview for future
                 os.makedirs("overviews", exist_ok=True)
@@ -292,6 +334,8 @@ def generate_overview_node(state: AgentState) -> AgentState:
         except Exception as e:
             logger.error(f"Error generating overview: {e}")
             state["response"] = "Error generating overview."
+    else:
+        state["response"] = "No ticker found for the requested company. Please specify a valid company name or ticker."
     return state
 
 # Task 3: Company News
@@ -416,6 +460,34 @@ def generate_highlights_node(state: AgentState) -> AgentState:
         state["response"] = "Error generating highlights."
     return state
 
+# Task 6: Follow-up Query
+@time_it
+def follow_up_node(state: AgentState) -> AgentState:
+    topic = state.get("follow_up_topic", state["query"])
+    logger.debug(f"Performing follow-up search for topic: {topic}")
+    try:
+        # Use Brave Search for deeper, more detailed results
+        from tools import get_news
+        detailed_news = get_news(f"detailed information about {topic}", num_results=10)
+        clean_news = [re.sub(r'<.*?>', '', item) for item in detailed_news]
+        
+        if state.get("source") == "cli":
+            summary_prompt = PromptTemplate.from_template(
+                """Provide a detailed summary of the following information about {topic}.
+                Organize into sections with headers, include key facts, context, and recent developments.
+                Make it comprehensive but user-friendly:
+{news}"""
+            )
+            state["response"] = llm.invoke(summary_prompt.format(topic=topic, news="\n\n".join(clean_news))).content
+            logger.info(f"Generated detailed follow-up summary for {topic}")
+        else:
+            state["response"] = "\n\n".join(clean_news)
+            logger.info(f"Fetched raw detailed news for {topic}")
+    except Exception as e:
+        logger.error(f"Error in follow-up search for {topic}: {e}")
+        state["response"] = f"Error fetching more details on {topic}."
+    return state
+
 # Build Graph
 graph = StateGraph(AgentState)
 graph.add_node("router", router_node)
@@ -424,6 +496,7 @@ graph.add_node("overview", generate_overview_node)
 graph.add_node("company_news", get_company_news_node)
 graph.add_node("general_news", get_general_news_node)
 graph.add_node("highlights", generate_highlights_node)
+graph.add_node("follow_up", follow_up_node)
 
 # Edges
 graph.set_entry_point("router")
@@ -436,6 +509,7 @@ graph.add_conditional_edges(
         "3": "company_news",
         "4": "general_news",
         "5": "highlights",
+        "6": "follow_up",
     }
 )
 graph.add_edge("report", END)
@@ -443,11 +517,31 @@ graph.add_edge("overview", END)
 graph.add_edge("company_news", END)
 graph.add_edge("general_news", END)
 graph.add_edge("highlights", END)
+graph.add_edge("follow_up", END)
 
 agent = graph.compile()
 
 @time_it
-def run_agent(query: str, source: Optional[str] = None) -> str:
-    state = {"query": query, "source": source}
+def run_agent(query: str, source: Optional[str] = None, chat_history: Optional[List[dict]] = None) -> tuple[str, List[dict]]:
+    if chat_history is None:
+        chat_history = []
+    
+    state = {
+        "query": query, 
+        "source": source,
+        "chat_history": chat_history.copy()  # Pass copy to avoid mutation
+    }
     result = agent.invoke(state)
-    return result["response"]
+    
+    # Add current interaction to history
+    chat_history.append({
+        "query": query,
+        "response": result["response"],
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    # Keep only last 10 interactions to prevent memory issues
+    if len(chat_history) > 10:
+        chat_history = chat_history[-10:]
+    
+    return result["response"], chat_history
